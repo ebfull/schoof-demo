@@ -12,7 +12,7 @@ pub mod util;
 
 use std::convert::TryFrom;
 
-use num_bigint::{BigUint, BigInt};
+use num_bigint::{BigInt, BigUint};
 use num_integer::Integer;
 
 use polynomial::Polynomial;
@@ -137,19 +137,26 @@ fn compute_t_mod_l(p: &BigUint, a: &BigUint, b: &BigUint, l: usize) -> BigUint {
     if l == 2 {
         compute_t_mod_2(p, a, b)
     } else {
+        // f(X) = X^3 + aX + b
         let fx = Polynomial::new(p, &[b.clone(), a.clone(), num(0), num(1)]);
+
+        // lth division polynomial modulo f(X)
         let mut h = division_poly(p, l, a, b);
 
         'newh: loop {
+            // Multiplicative identity
             let id = Endo {
                 a: Polynomial::new(p, &[zero(), one()]),
                 b: Polynomial::new(p, &[one()]),
             };
 
+            // Frobenius endomorphism
+            // (X^p mod h, Y^p mod h)
+            // = (X^p mod h, (f(X)^{(p - 1) / 2} mod h) Y)
             let frob = Endo {
                 a: {
                     let x = Polynomial::new(p, &[zero(), one()]);
-                    // exponentiate x by the modulus (mod h)
+                    // exponentiate X by p (mod h)
                     let mut xacc = Polynomial::new(p, &[one()]);
                     for bit in p
                         .to_bytes_le()
@@ -168,7 +175,7 @@ fn compute_t_mod_l(p: &BigUint, a: &BigUint, b: &BigUint, l: usize) -> BigUint {
                     xacc
                 },
                 b: {
-                    // exponentiate f(x) by (modulus - 1) / 2 (mod h)
+                    // exponentiate f(X) by (p - 1) / 2 (mod h)
                     let mut xacc = Polynomial::new(p, &[one()]);
                     let exponent: BigUint = (p - &one()) >> 1;
                     for bit in exponent
@@ -189,10 +196,13 @@ fn compute_t_mod_l(p: &BigUint, a: &BigUint, b: &BigUint, l: usize) -> BigUint {
                 },
             };
 
+            // Frobenius endomorphism
+            // (X^p mod h, Y^p mod h)
+            // = (X^(p^2) mod h, (f(X)^{(p^2 - 1) / 2} mod h) Y)
             let frob2 = Endo {
                 a: {
                     let x = Polynomial::new(p, &[zero(), one()]);
-                    // exponentiate x by the modulus squared (mod h)
+                    // exponentiate X by the p squared (mod h)
                     let mut xacc = Polynomial::new(p, &[one()]);
                     let modulus_squared = p * p;
                     for bit in modulus_squared
@@ -212,7 +222,7 @@ fn compute_t_mod_l(p: &BigUint, a: &BigUint, b: &BigUint, l: usize) -> BigUint {
                     xacc
                 },
                 b: {
-                    // exponentiate f(x) by (modulus^2 - 1) / 2 (mod h)
+                    // exponentiate f(X) by (p^2 - 1) / 2 (mod h)
                     let mut xacc = Polynomial::new(p, &[one()]);
                     let exponent: BigUint = ((p * p) - &one()) >> 1;
                     for bit in exponent
@@ -233,6 +243,7 @@ fn compute_t_mod_l(p: &BigUint, a: &BigUint, b: &BigUint, l: usize) -> BigUint {
                 },
             };
 
+            // Compute rhs = [p (mod l)]
             let mut rhs = None;
             for bit in (p % num(l as u32))
                 .to_bytes_le()
@@ -268,6 +279,7 @@ fn compute_t_mod_l(p: &BigUint, a: &BigUint, b: &BigUint, l: usize) -> BigUint {
                 }
             }
 
+            // Compute rhs = [q] + frob2
             rhs = match rhs {
                 Some(rhs) => match addendo(&rhs, &frob2, &h, &fx, a) {
                     Err(g) => {
@@ -281,8 +293,10 @@ fn compute_t_mod_l(p: &BigUint, a: &BigUint, b: &BigUint, l: usize) -> BigUint {
             };
 
             if rhs.is_none() {
+                // t (mod l) = 0
                 return num(0);
             } else {
+                // Find value of t < l such that [t] frob = rhs = [q] + frob2
                 let rhs = rhs.unwrap();
                 let mut lhs = frob.clone();
                 let mut c = one();
@@ -448,7 +462,7 @@ fn division_poly<'a>(p: &'a BigUint, l: usize, a: &BigUint, b: &BigUint) -> Poly
                         let left = Polynomial::mul(&left, &psi_m.0);
                         let mut left = Polynomial::mul(&left, &psi_m.0);
                         while left_y_power > 1 {
-                            // replace y^2 with X^3 + aX + b to keep the
+                            // replace Y^2 with X^3 + aX + b to keep the
                             // polynomial at most linear in Y
                             left = Polynomial::mul(&left, &f);
                             left_y_power -= 2;
@@ -460,7 +474,7 @@ fn division_poly<'a>(p: &'a BigUint, l: usize, a: &BigUint, b: &BigUint) -> Poly
                         let right = Polynomial::mul(&right, &psi_m_plus_1.0);
                         let mut right = Polynomial::mul(&right, &psi_m_plus_1.0);
                         while right_y_power > 1 {
-                            // replace y^2 with X^3 + aX + b to keep the
+                            // replace Y^2 with X^3 + aX + b to keep the
                             // polynomial at most linear in Y
                             right = Polynomial::mul(&right, &f);
                             right_y_power -= 2;
@@ -472,7 +486,7 @@ fn division_poly<'a>(p: &'a BigUint, l: usize, a: &BigUint, b: &BigUint) -> Poly
                         assert_eq!(left_y_power, right_y_power);
                         let mut result_y_power = left_y_power;
                         while result_y_power > 1 {
-                            // replace y^2 with X^3 + aX + b to keep the
+                            // replace Y^2 with X^3 + aX + b to keep the
                             // polynomial at most linear in Y
                             result = Polynomial::mul(&result, &f);
                             result_y_power -= 2;
@@ -510,13 +524,13 @@ fn division_poly<'a>(p: &'a BigUint, l: usize, a: &BigUint, b: &BigUint) -> Poly
                         assert_eq!(left_y_power, right_y_power);
                         let mut result_y_power = left_y_power + psi_m.1;
 
-                        // Divide by 2y
+                        // Divide by 2Y
                         result_y_power -= 1;
                         for coeff in result.coeffs.iter_mut() {
                             *coeff = (&*coeff * twoinv) % p;
                         }
                         while result_y_power > 1 {
-                            // replace y^2 with X^3 + aX + b to keep the
+                            // replace Y^2 with X^3 + aX + b to keep the
                             // polynomial at most linear in Y
                             result = Polynomial::mul(&result, &f);
                             result_y_power -= 2;
@@ -613,5 +627,8 @@ fn test_compute_t_mod_11() {
 fn test_schoof() {
     assert_eq!(num(204), schoof(&num(191), &num(186), &num(20)));
     assert_eq!(num(65614), schoof(&num(65519), &num(14368), &num(6420)));
-    assert_eq!(num(138161621), schoof(&num(138172777), &num(135939349), &num(38820686)));
+    assert_eq!(
+        num(138161621),
+        schoof(&num(138172777), &num(135939349), &num(38820686))
+    );
 }
